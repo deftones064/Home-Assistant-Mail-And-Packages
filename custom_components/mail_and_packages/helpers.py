@@ -1,5 +1,7 @@
 """Helper functions for Mail and Packages."""
 
+from .parser import extract_images
+
 import datetime
 import email
 import hashlib
@@ -565,12 +567,19 @@ def email_search(
 def email_fetch(
     account: Type[imaplib.IMAP4_SSL], num: int, parts: str = "(RFC822)"
 ) -> tuple:
-    """Download specified email for parsing.
-
-    Returns tuple
-    """
     try:
         value = account.fetch(num, parts)
+
+        # 🔥 NEW: parse email for images
+        if value[0] == "OK":
+            for response_part in value[1]:
+                if isinstance(response_part, tuple):
+                    try:
+                        msg = email.message_from_bytes(response_part[1])
+                        extract_images(msg, "/config/www/mail_plus/")
+                    except Exception as e:
+                        _LOGGER.debug("Parser failed: %s", e)
+
     except Exception as err:
         _LOGGER.error("Error fetching emails: %s", str(err))
         value = "BAD", err.args[0]

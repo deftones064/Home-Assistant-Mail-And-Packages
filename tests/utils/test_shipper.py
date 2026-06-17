@@ -8,6 +8,7 @@ from custom_components.mail_and_packages.utils.cache import EmailCache
 from custom_components.mail_and_packages.utils.shipper import (
     generic_delivery_image_extraction,
     get_tracking,
+    get_tracking_metadata,
     save_image_data_to_disk,
 )
 
@@ -33,6 +34,41 @@ async def test_get_tracking_subject():
         mock_fetch.return_value = ("OK", [b"Subject: UPS: 1Z1234567890123456\n\nBody"])
         result = await get_tracking(sdata, mock_acc, the_format)
         assert result == ["1Z1234567890123456"]
+
+
+@pytest.mark.asyncio
+async def test_get_tracking_metadata():
+    """Test get_tracking_metadata finds tracking details from email headers."""
+    mock_acc = AsyncMock()
+    email_content = (
+        b"From: UPS <mcinfo@ups.com>\n"
+        b"Subject: UPS Update: Expected Delivery on June 18\n"
+        b"Date: Wed, 17 Jun 2026 10:00:00 -0400\n"
+        b"Content-Type: text/plain\n\n"
+        b"Tracking 1Z1234567890123456 is scheduled for delivery tomorrow."
+    )
+
+    with patch(
+        "custom_components.mail_and_packages.utils.shipper.email_fetch",
+        new_callable=AsyncMock,
+        return_value=("OK", [email_content]),
+    ):
+        result = await get_tracking_metadata(
+            "1",
+            mock_acc,
+            "1Z?[0-9A-Z]{16}",
+            delivery_image="ups/ups_delivery.jpg",
+        )
+
+    assert result == {
+        "1Z1234567890123456": {
+            "email_subject": "UPS Update: Expected Delivery on June 18",
+            "sender": "mcinfo@ups.com",
+            "message_date": "2026-06-17T10:00:00-04:00",
+            "estimated_delivery_date": "2026-06-18",
+            "delivery_image": "ups/ups_delivery.jpg",
+        }
+    }
 
 
 @pytest.mark.asyncio

@@ -637,7 +637,15 @@ async def test_process_batch_deduplication(hass):
         if sensor == "ups_delivered":
             return {"ups_delivered": 1, ATTR_TRACKING: ["T1"]}
         if sensor == "ups_delivering":
-            return {"ups_delivering": 2, ATTR_TRACKING: ["T1", "T2"], ATTR_COUNT: 2}
+            return {
+                "ups_delivering": 2,
+                ATTR_TRACKING: ["T1", "T2"],
+                ATTR_COUNT: 2,
+                "_tracking_metadata": {
+                    "T1": {"email_subject": "Delivered duplicate"},
+                    "T2": {"email_subject": "Out for delivery"},
+                },
+            }
         if sensor == "ups_packages":
             # T1 already in delivered/delivering; T3 is a new upcoming shipment
             return {"ups_packages": 2, ATTR_TRACKING: ["T1", "T3"]}
@@ -670,6 +678,9 @@ async def test_process_batch_deduplication(hass):
 
         # Tracking Aggregation
         assert set(result[ATTR_TRACKING]) == {"T1", "T2", "F1", "T3"}
+        assert result["_tracking_metadata"]["ups_delivering"] == {
+            "T2": {"email_subject": "Out for delivery"}
+        }
 
 
 @pytest.mark.asyncio

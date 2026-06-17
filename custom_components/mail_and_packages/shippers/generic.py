@@ -37,6 +37,7 @@ from custom_components.mail_and_packages.utils.imap import (
 from custom_components.mail_and_packages.utils.shipper import (
     generic_delivery_image_extraction,
     get_tracking,
+    get_tracking_metadata,
 )
 
 from .base import Shipper
@@ -147,6 +148,14 @@ class GenericShipper(Shipper):
         )
         if result[ATTR_TRACKING]:
             count = len(result[ATTR_TRACKING])
+            if tracking_metadata := await self._process_tracking_metadata(
+                sensor_type,
+                found_data,
+                account,
+                cache,
+                self._delivery_image_reference(shipper_cfg, image_found),
+            ):
+                result["_tracking_metadata"] = tracking_metadata
 
         # For _delivered sensors, the extended-window search gives us tracking
         # numbers needed for deduplication (above), but the count must reflect
@@ -221,7 +230,13 @@ class GenericShipper(Shipper):
         # Merge results and aggregate global tracking
         res = {}
         for sensor, sensor_res in batch_results:
-            res.update(sensor_res)
+            res.update(
+                {
+                    key: value
+                    for key, value in sensor_res.items()
+                    if key not in ("_tracking_metadata",)
+                }
+            )
             # Expose per-sensor raw tracking for coordinator state management.
             # Keyed as "_tracking_details" to distinguish from the public data dict.
             tracking = sensor_res.get(ATTR_TRACKING)
@@ -229,6 +244,10 @@ class GenericShipper(Shipper):
                 ("_delivering", "_delivered", "_exception")
             ):
                 res.setdefault("_tracking_details", {})[sensor] = list(tracking)
+                if tracking_metadata := sensor_res.get("_tracking_metadata"):
+                    res.setdefault("_tracking_metadata", {})[sensor] = (
+                        tracking_metadata
+                    )
 
         if all_tracking:
             res[ATTR_TRACKING] = list(all_tracking)
@@ -318,6 +337,12 @@ class GenericShipper(Shipper):
                 sensor_res[sensor] = len(new_tracking)
                 if ATTR_COUNT in sensor_res:
                     sensor_res[ATTR_COUNT] = len(new_tracking)
+                if tracking_metadata := sensor_res.get("_tracking_metadata"):
+                    sensor_res["_tracking_metadata"] = {
+                        tid: metadata
+                        for tid, metadata in tracking_metadata.items()
+                        if tid in new_tracking
+                    }
 
     def _compute_package_totals(
         self,
@@ -571,6 +596,46 @@ class GenericShipper(Shipper):
             )
 
         return list(dict.fromkeys(tracking_nums))
+
+    async def _process_tracking_metadata(
+        self,
+        sensor_type: str,
+        found_data: list,
+        account: IMAP4_SSL,
+        cache: EmailCache | None = None,
+        delivery_image: str | None = None,
+    ) -> dict[str, dict[str, str]]:
+        """Process tracking metadata for the sensor."""
+        tracking_key = f"{'_'.join(sensor_type.split('_')[:-1])}_tracking"
+        if (
+            tracking_key not in SENSOR_DATA
+            or ATTR_PATTERN not in SENSOR_DATA[tracking_key]
+        ):
+            return {}
+
+        pattern = SENSOR_DATA[tracking_key][ATTR_PATTERN][0]
+        tracking_metadata = {}
+        for sdata in found_data:
+            try:
+                tracking_metadata.update(
+                    await get_tracking_metadata(
+                        sdata.decode(), account, pattern, cache, delivery_image
+                    )
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Could not extract tracking metadata: %s", err)
+
+        return tracking_metadata
+
+    def _delivery_image_reference(
+        self,
+        shipper_cfg: dict[str, Any] | None,
+        image_found: bool,
+    ) -> str | None:
+        """Return the relative delivery image reference for package metadata."""
+        if not image_found or not shipper_cfg:
+            return None
+        return f"{shipper_cfg['name']}/{shipper_cfg['image_name']}"
 
     async def _setup_image_extraction(
         self,

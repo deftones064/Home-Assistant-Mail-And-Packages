@@ -84,6 +84,7 @@ class MailDataUpdateCoordinator(DataUpdateCoordinator):
         self._file_mtime_cache = {}
         self._hash_cache = {}
         self._in_transit_tracking: dict[str, dict[str, str]] = {}
+        self._in_transit_metadata: dict[str, dict[str, dict[str, str]]] = {}
 
         _LOGGER.debug("Data will be update every %s", self.interval)
 
@@ -184,8 +185,11 @@ class MailDataUpdateCoordinator(DataUpdateCoordinator):
                 account, config, today, since_date, cache
             )
             tracking_details = shipper_data.pop("_tracking_details", {})
+            tracking_metadata = shipper_data.pop("_tracking_metadata", {})
             data.update(shipper_data)
-            self._apply_tracking_state(data, tracking_details, today_iso)
+            self._apply_tracking_state(
+                data, tracking_details, today_iso, tracking_metadata
+            )
 
             # Aggregate global transit and delivered sensors
             self._aggregate_package_counts(data)
@@ -332,8 +336,10 @@ class MailDataUpdateCoordinator(DataUpdateCoordinator):
         data: dict,
         tracking_details: dict[str, list[str]],
         today_iso: str,
+        tracking_metadata: dict[str, dict[str, dict[str, str]]] | None = None,
     ) -> None:
         """Update in-transit tracking state and override sensor counts."""
+        tracking_metadata = tracking_metadata or {}
         prefixes: set[str] = set()
         for sensor_key in tracking_details:
             prefix = "_".join(sensor_key.split("_")[:-1])
@@ -344,23 +350,34 @@ class MailDataUpdateCoordinator(DataUpdateCoordinator):
             delivering = list(tracking_details.get(f"{prefix}_delivering", []))
             delivering += list(tracking_details.get(f"{prefix}_exception", []))
             delivered = list(tracking_details.get(f"{prefix}_delivered", []))
+            metadata = {}
+            metadata.update(tracking_metadata.get(f"{prefix}_delivering", {}))
+            metadata.update(tracking_metadata.get(f"{prefix}_exception", {}))
 
             self._update_tracking_for_prefix(
-                prefix, delivering, delivered, today_iso, MAX_TRACKING_AGE_DAYS
+                prefix,
+                delivering,
+                delivered,
+                today_iso,
+                MAX_TRACKING_AGE_DAYS,
+                metadata,
             )
 
             in_transit = self._in_transit_tracking.get(prefix, {})
             if in_transit:
                 data[f"{prefix}_tracking"] = list(in_transit.keys())
-                data[f"{prefix}_package_details"] = [
-                    {
+                prefix_metadata = self._in_transit_metadata.get(prefix, {})
+                package_details = []
+                for tracking_number, first_seen in in_transit.items():
+                    detail = {
                         "carrier": prefix,
                         "tracking_number": tracking_number,
                         "status": "in_transit",
                         "first_seen": first_seen,
                     }
-                    for tracking_number, first_seen in in_transit.items()
-                ]
+                    detail.update(prefix_metadata.get(tracking_number, {}))
+                    package_details.append(detail)
+                data[f"{prefix}_package_details"] = package_details
                 data[f"{prefix}_delivering"] = len(in_transit)
                 delivered_count = data.get(f"{prefix}_delivered", 0)
                 data[f"{prefix}_packages"] = len(in_transit) + (
@@ -374,21 +391,29 @@ class MailDataUpdateCoordinator(DataUpdateCoordinator):
         delivered: list[str],
         today_iso: str,
         ttl_days: int,
+        metadata: dict[str, dict[str, str]] | None = None,
     ) -> None:
         """Add/expire delivering tracking numbers and remove delivered ones."""
         if prefix not in self._in_transit_tracking:
             self._in_transit_tracking[prefix] = {}
+        if prefix not in self._in_transit_metadata:
+            self._in_transit_metadata[prefix] = {}
 
         in_transit = self._in_transit_tracking[prefix]
+        in_transit_metadata = self._in_transit_metadata[prefix]
+        metadata = metadata or {}
 
         # Add new delivering tracking numbers (record first-seen date)
         for tid in delivering:
             if tid and tid not in in_transit:
                 in_transit[tid] = today_iso
+            if tid and metadata.get(tid):
+                in_transit_metadata[tid] = metadata[tid]
 
         # Remove delivered tracking numbers
         for tid in delivered:
             in_transit.pop(tid, None)
+            in_transit_metadata.pop(tid, None)
 
         # Expire entries older than TTL
         cutoff = (
@@ -397,6 +422,7 @@ class MailDataUpdateCoordinator(DataUpdateCoordinator):
         expired = [tid for tid, seen in in_transit.items() if seen < cutoff]
         for tid in expired:
             del in_transit[tid]
+            in_transit_metadata.pop(tid, None)
 
     def _aggregate_package_counts(self, data: dict) -> None:
         """Aggregate global transit and delivered counts from all shippers."""

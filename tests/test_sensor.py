@@ -465,6 +465,11 @@ def test_package_details_attributes():
             "tracking_number": "1Z123",
             "status": "in_transit",
             "first_seen": "2026-04-22",
+            "email_subject": "UPS Update: Expected Delivery on June 18",
+            "sender": "mcinfo@ups.com",
+            "message_date": "2026-06-17T10:00:00-04:00",
+            "estimated_delivery_date": "2026-06-18",
+            "delivery_image": "ups/ups_delivery.jpg",
         }
     ]
 

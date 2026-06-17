@@ -406,6 +406,45 @@ async def test_apply_tracking_state_removes_delivered(hass):
 
 
 @pytest.mark.asyncio
+async def test_apply_tracking_state_enriches_package_details(hass):
+    """_apply_tracking_state merges metadata into package details."""
+    with patch("homeassistant.helpers.frame.report_usage"):
+        coordinator = MailDataUpdateCoordinator(hass, FAKE_CONFIG_DATA)
+
+    data = {"ups_delivering": 1, "ups_delivered": 0, "ups_packages": 1}
+    tracking_details = {"ups_delivering": ["1Z333"], "ups_delivered": []}
+    tracking_metadata = {
+        "ups_delivering": {
+            "1Z333": {
+                "email_subject": "UPS Update: Expected Delivery on June 18",
+                "sender": "mcinfo@ups.com",
+                "message_date": "2026-06-17T10:00:00-04:00",
+                "estimated_delivery_date": "2026-06-18",
+                "delivery_image": "ups/ups_delivery.jpg",
+            }
+        }
+    }
+
+    coordinator._apply_tracking_state(
+        data, tracking_details, "2026-06-17", tracking_metadata
+    )
+
+    assert data["ups_package_details"] == [
+        {
+            "carrier": "ups",
+            "tracking_number": "1Z333",
+            "status": "in_transit",
+            "first_seen": "2026-06-17",
+            "email_subject": "UPS Update: Expected Delivery on June 18",
+            "sender": "mcinfo@ups.com",
+            "message_date": "2026-06-17T10:00:00-04:00",
+            "estimated_delivery_date": "2026-06-18",
+            "delivery_image": "ups/ups_delivery.jpg",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_apply_tracking_state_no_tracking_details(hass):
     """With empty tracking_details, data is unchanged."""
     with patch("homeassistant.helpers.frame.report_usage"):
@@ -467,6 +506,13 @@ async def test_process_emails_strips_tracking_details_from_output(hass):
     mock_shipper.process_batch.return_value = {
         "ups_delivering": 1,
         "_tracking_details": {"ups_delivering": ["1Z999"]},
+        "_tracking_metadata": {
+            "ups_delivering": {
+                "1Z999": {
+                    "email_subject": "UPS Update: Expected Delivery on June 18"
+                }
+            }
+        },
     }
 
     with (
@@ -486,6 +532,7 @@ async def test_process_emails_strips_tracking_details_from_output(hass):
         data = await coordinator.process_emails(hass, FAKE_CONFIG_DATA)
 
     assert "_tracking_details" not in data
+    assert "_tracking_metadata" not in data
 
 
 @pytest.mark.asyncio

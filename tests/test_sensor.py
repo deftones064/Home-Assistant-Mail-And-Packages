@@ -14,6 +14,7 @@ from custom_components.mail_and_packages.const import (
     AMAZON_EXCEPTION,
     AMAZON_ORDER,
     ATTR_ORDER,
+    ATTR_PACKAGE_DETAILS,
     DOMAIN,
 )
 from custom_components.mail_and_packages.sensor import ImagePathSensors, PackagesSensor
@@ -388,7 +389,7 @@ async def test_packages_sensor_attributes_edge_cases(hass):
     coord_none.data = None
     sensor_none = PackagesSensor(
         entry,
-        MagicMock(key="packages", name="Packages"),
+        MagicMock(key="ups_delivering", name="Mail UPS Delivering"),
         coord_none,
     )
     assert sensor_none.extra_state_attributes == {}
@@ -447,6 +448,43 @@ async def test_packages_sensor_attributes_edge_cases(hass):
     )
     attrs_otp = sensor_otp.extra_state_attributes
     assert attrs_otp["code"] == ["654321"]
+
+
+def test_package_details_attributes():
+    """Test structured package details are exposed as sensor attributes."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "imap.test.email",
+        },
+    )
+
+    package_details = [
+        {
+            "carrier": "ups",
+            "tracking_number": "1Z123",
+            "status": "in_transit",
+            "first_seen": "2026-04-22",
+        }
+    ]
+
+    coordinator = MagicMock()
+    coordinator.data = {
+        "ups_delivering": 1,
+        "ups_tracking": ["1Z123"],
+        "ups_package_details": package_details,
+    }
+
+    sensor = PackagesSensor(
+        entry,
+        MagicMock(key="ups_delivering", name="Mail UPS Delivering"),
+        coordinator,
+    )
+
+    attributes = sensor.extra_state_attributes
+
+    assert attributes["tracking_#"] == ["1Z123"]
+    assert attributes[ATTR_PACKAGE_DETAILS] == package_details
 
 
 @pytest.mark.asyncio

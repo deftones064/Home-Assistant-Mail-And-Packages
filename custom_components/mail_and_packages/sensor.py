@@ -145,6 +145,10 @@ class PackagesSensor(CoordinatorEntity, SensorEntity):
         attr = {}
         data = self.coordinator.data
 
+        # Catch no data entries
+        if data is None:
+            return attr
+
         if any(
             sensor in self.type
             for sensor in ["_delivering", "_delivered", "_packages", "_exception"]
@@ -154,10 +158,6 @@ class PackagesSensor(CoordinatorEntity, SensorEntity):
 
             if package_details := data.get(self._package_details_key):
                 attr[ATTR_PACKAGE_DETAILS] = package_details
-
-        # Catch no data entries
-        if self.data is None:
-            return attr
 
         if "Amazon" in self._name:
             self._add_amazon_attributes(attr, data)

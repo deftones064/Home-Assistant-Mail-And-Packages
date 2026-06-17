@@ -360,6 +360,26 @@ async def test_apply_tracking_state_overrides_delivering(hass):
     assert data["ups_delivering"] == 3
     assert data["ups_packages"] == 3
     assert set(data["ups_tracking"]) == {"1Z111", "1Z222", "1Z333"}
+    assert data["ups_package_details"] == [
+        {
+            "carrier": "ups",
+            "tracking_number": "1Z111",
+            "status": "in_transit",
+            "first_seen": "2026-04-20",
+        },
+        {
+            "carrier": "ups",
+            "tracking_number": "1Z222",
+            "status": "in_transit",
+            "first_seen": "2026-04-21",
+        },
+        {
+            "carrier": "ups",
+            "tracking_number": "1Z333",
+            "status": "in_transit",
+            "first_seen": "2026-04-22",
+        },
+    ]
 
 
 @pytest.mark.asyncio

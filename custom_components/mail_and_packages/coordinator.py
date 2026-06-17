@@ -352,6 +352,15 @@ class MailDataUpdateCoordinator(DataUpdateCoordinator):
             in_transit = self._in_transit_tracking.get(prefix, {})
             if in_transit:
                 data[f"{prefix}_tracking"] = list(in_transit.keys())
+                data[f"{prefix}_package_details"] = [
+                    {
+                        "carrier": prefix,
+                        "tracking_number": tracking_number,
+                        "status": "in_transit",
+                        "first_seen": first_seen,
+                    }
+                    for tracking_number, first_seen in in_transit.items()
+                ]
                 data[f"{prefix}_delivering"] = len(in_transit)
                 delivered_count = data.get(f"{prefix}_delivered", 0)
                 data[f"{prefix}_packages"] = len(in_transit) + (

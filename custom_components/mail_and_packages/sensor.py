@@ -29,6 +29,7 @@ from .const import (
     ATTR_IMAGE_NAME,
     ATTR_IMAGE_PATH,
     ATTR_ORDER,
+    ATTR_PACKAGE_DETAILS,
     ATTR_TRACKING_NUM,
     ATTR_USPS_IMAGE,
     CONF_PATH,
@@ -85,9 +86,12 @@ class PackagesSensor(CoordinatorEntity, SensorEntity):
         self.data = self.coordinator.data
         parts = self.type.split("_")
         if len(parts) > 1:
-            self._tracking_key = f"{'_'.join(parts[:-1])}_tracking"
+            prefix = "_".join(parts[:-1])
         else:
-            self._tracking_key = f"{self.type}_tracking"
+            prefix = self.type
+
+        self._tracking_key = f"{prefix}_tracking"
+        self._package_details_key = f"{prefix}_package_details"
 
     @property
     def device_info(self) -> dict:
@@ -136,7 +140,7 @@ class PackagesSensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.data is not None
 
     @property
-    def extra_state_attributes(self) -> str | None:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return device specific state attributes."""
         attr = {}
         data = self.coordinator.data
@@ -147,6 +151,9 @@ class PackagesSensor(CoordinatorEntity, SensorEntity):
         ):
             if tracking := data.get(self._tracking_key):
                 attr[ATTR_TRACKING_NUM] = tracking
+
+            if package_details := data.get(self._package_details_key):
+                attr[ATTR_PACKAGE_DETAILS] = package_details
 
         # Catch no data entries
         if self.data is None:
